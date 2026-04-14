@@ -187,6 +187,102 @@ local function group(name, inline, args, extraOptions)
 	return result
 end
 
+local customSplitsArgs = {}
+local customSplitsBuilt = false
+
+local function PopulateCustomSplitsGroup()
+	if customSplitsBuilt then return end
+	customSplitsBuilt = true
+	
+	local mapTable = C_ChallengeMode and C_ChallengeMode.GetMapTable() or {}
+	for _, mapId in ipairs(mapTable) do
+		local mapName = C_ChallengeMode.GetMapUIInfo(mapId)
+		if mapName then
+			local mapArgs = {
+				forces = {
+					type = "input",
+					name = L["Forces (Trash)"],
+					desc = L["Format: MM:SS"],
+					order = 1,
+					get = function()
+						local t = WarpDeplete.db.profile.manualSplits[mapId] and WarpDeplete.db.profile.manualSplits[mapId]["forces"]
+						return Util.parseMsToTimeString((t or 0) * 1000)
+					end,
+					set = function(_, val)
+						if not WarpDeplete.db.profile.manualSplits[mapId] then WarpDeplete.db.profile.manualSplits[mapId] = {} end
+						WarpDeplete.db.profile.manualSplits[mapId]["forces"] = Util.parseTimeStringToMs(val) / 1000
+						WarpDeplete:RenderLayout()
+					end,
+				},
+				challenge = {
+					type = "input",
+					name = L["Overall Timer"],
+					desc = L["Format: MM:SS"],
+					order = -1,
+					get = function()
+						local t = WarpDeplete.db.profile.manualSplits[mapId] and WarpDeplete.db.profile.manualSplits[mapId]["challenge"]
+						return Util.parseMsToTimeString(t or 0)
+					end,
+					set = function(_, val)
+						if not WarpDeplete.db.profile.manualSplits[mapId] then WarpDeplete.db.profile.manualSplits[mapId] = {} end
+						WarpDeplete.db.profile.manualSplits[mapId]["challenge"] = Util.parseTimeStringToMs(val)
+						WarpDeplete:RenderLayout()
+					end,
+				}
+			}
+			
+			-- Ensure EncounterJournal is loaded to fetch actual boss names
+			if not (EncounterJournal and EncounterJournal:IsShown()) then
+				C_AddOns.LoadAddOn("Blizzard_EncounterJournal")
+			end
+			
+			local instanceID = Util.getEJInstanceIDForMap(mapId)
+			local bossNames = {}
+			if instanceID then
+				EJ_SelectInstance(instanceID)
+				for i = 1, 10 do
+					local name = EJ_GetEncounterInfoByIndex(i, instanceID)
+					if name then
+						bossNames[tostring(i)] = name
+					end
+				end
+			end
+			
+			-- Usually M+ has max 5 bosses except Tazavesh or similar, but we check what we got
+			local bossCount = 0
+			for k, v in pairs(bossNames) do
+			   bossCount = bossCount + 1
+			end
+			if bossCount == 0 then bossCount = 5 end
+
+			for i = 1, bossCount do
+				local bossName = bossNames[tostring(i)] or (L["Boss"] .. " " .. i)
+				mapArgs[tostring(i)] = {
+					type = "input",
+					name = Util.utf8Sub(bossName, 30),
+					desc = L["Format: MM:SS"],
+					order = 10 + i,
+					get = function()
+						local t = WarpDeplete.db.profile.manualSplits[mapId] and WarpDeplete.db.profile.manualSplits[mapId][i]
+						return Util.parseMsToTimeString((t or 0) * 1000)
+					end,
+					set = function(_, val)
+						if not WarpDeplete.db.profile.manualSplits[mapId] then WarpDeplete.db.profile.manualSplits[mapId] = {} end
+						WarpDeplete.db.profile.manualSplits[mapId][i] = Util.parseTimeStringToMs(val) / 1000
+						WarpDeplete:RenderLayout()
+					end,
+				}
+			end
+
+			customSplitsArgs["map_" .. mapId] = {
+				type = "group",
+				name = mapName,
+				args = mapArgs,
+			}
+		end
+	end
+end
+
 function WarpDeplete:InitOptions()
 	self.isUnlocked = false
 
@@ -607,6 +703,27 @@ function WarpDeplete:InitOptions()
 					},
 					{
 						type = "select",
+						name = L["Split Mode"],
+						desc = L["Choose whether to compare against your best times or custom manual times"],
+						sorting = { "best", "manual" },
+						values = {
+							["best"] = L["Personal Best"],
+							["manual"] = L["Manual"],
+						},
+						hidden = function()
+							return not WarpDeplete.db.profile.splitsEnabled
+						end,
+						get = function(_)
+							return WarpDeplete.db.profile.splitMode or "best"
+						end,
+						set = function(_, value)
+							WarpDeplete.db.profile.splitMode = value
+							WarpDeplete:RenderLayout()
+						end,
+						width = 3 / 2,
+					},
+					{
+						type = "select",
 						name = L["Fallback Split Level"],
 						desc = L["If there is no record for the current key level, fallback to the highest or lowest recorded level for this dungeon."],
 						sorting = { "none", "highest", "closest_higher", "closest_lower", "lowest" },
@@ -618,7 +735,7 @@ function WarpDeplete:InitOptions()
 							["lowest"] = L["Lowest Level"],
 						},
 						hidden = function()
-							return not WarpDeplete.db.profile.splitsEnabled
+							return not WarpDeplete.db.profile.splitsEnabled or WarpDeplete.db.profile.splitMode ~= "best"
 						end,
 						get = function(_)
 							return WarpDeplete.db.profile.fallbackSplitBehavior or "none"
@@ -629,8 +746,32 @@ function WarpDeplete:InitOptions()
 						end,
 						width = 3 / 2,
 					},
+					{
+						type = "execute",
+						name = L["Set Custom Splits"],
+						desc = L["Configure manual times for boss splits"],
+						hidden = function()
+							return not WarpDeplete.db.profile.splitsEnabled or WarpDeplete.db.profile.splitMode ~= "manual"
+						end,
+						func = function()
+							LibStub("AceConfigDialog-3.0"):SelectGroup("WarpDeplete", "customSplits")
+						end,
+						width = 3 / 2,
+					},
 				}),
 			}, { order = 3 }),
+
+			customSplits = {
+				name = L["Custom Splits"],
+				type = "group",
+				childGroups = "tab",
+				order = 4,
+				hidden = function()
+					PopulateCustomSplitsGroup()
+					return not WarpDeplete.db.profile.splitsEnabled or WarpDeplete.db.profile.splitMode ~= "manual"
+				end,
+				args = customSplitsArgs,
+			},
 
 			texts = group(L["Display"], false, {
 				group(L["General"], true, {

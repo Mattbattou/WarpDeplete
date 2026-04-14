@@ -136,7 +136,10 @@ local defaults = {
     showPbsAlways = false,
     fallbackSplitBehavior = "none",
     splitFasterTimeColor = "FF64FF64",
-    splitSlowerTimeColor = "FFFF5656"
+    splitSlowerTimeColor = "FFFF5656",
+    
+    splitMode = "best",
+    manualSplits = {},
   },
 }
 

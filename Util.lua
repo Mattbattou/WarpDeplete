@@ -62,6 +62,31 @@ function Util.formatTimeMilliseconds(time)
 	return ("%d:%02d.%03d"):format(timeMin, timeSec, timeMilliseconds)
 end
 
+function Util.parseTimeStringToMs(timeString)
+	if not timeString or timeString == "" then return 0 end
+	timeString = Util.trim(tostring(timeString))
+	local minStr, secStr = string.match(timeString, "^(%d+)[:.](%d%d)$")
+	if minStr and secStr then
+		return ((tonumber(minStr) * 60) + tonumber(secStr)) * 1000
+	end
+	
+	-- Try pure seconds too
+	local secOnly = string.match(timeString, "^(%d+)$")
+	if secOnly then
+		return tonumber(secOnly) * 1000
+	end
+	
+	return 0
+end
+
+function Util.parseMsToTimeString(timeMs)
+	if not timeMs or timeMs <= 0 then return "" end
+	local totalSec = math.floor(timeMs / 1000)
+	local mins = math.floor(totalSec / 60)
+	local secs = totalSec % 60
+	return ("%d:%02d"):format(mins, secs)
+end
+
 function Util.formatDeathTimeMinutes(time)
 	local timeMin = math.floor(time / 60)
 	local timeSec = math.floor(time - (timeMin * 60))
@@ -328,6 +353,32 @@ local mapIDToEJID = { -- MapChallengeMode = JournalInstance
 	[505] = { 1270, "Dawnbreaker" },
 	[506] = { 1272, "Cinderbrew Maedery" },
 }
+
+function Util.getEJInstanceIDForMap(mapId)
+	if mapId and mapIDToEJID[mapId] then
+		return mapIDToEJID[mapId][1]
+	end
+	
+	-- Dynamic fallback: Search through EJ tiers for a matching instance name
+	local mapName = C_ChallengeMode.GetMapUIInfo(mapId)
+	if mapName then
+		local numTiers = EJ_GetNumTiers and EJ_GetNumTiers() or 11
+		for tier = 1, numTiers do
+			EJ_SelectTier(tier)
+			local i = 1
+			while true do
+				local instanceID, name = EJ_GetInstanceByIndex(i, false)
+				if not instanceID then break end
+				if name == mapName then
+					return instanceID
+				end
+				i = i + 1
+			end
+		end
+	end
+	
+	return nil
+end
 
 function Util.getEJInstanceID()
 	local mapID = C_Map.GetBestMapForUnit("player")

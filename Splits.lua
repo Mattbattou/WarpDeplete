@@ -117,6 +117,16 @@ function WarpDeplete:GetBestSplit(objective)
 		return nil, nil
 	end
 
+	if self.db.profile.splitMode == "manual" then
+		if self.db.profile.manualSplits[self.state.mapId] and self.db.profile.manualSplits[self.state.mapId][objective] then
+			local t = self.db.profile.manualSplits[self.state.mapId][objective]
+			if t > 0 then
+				return t, self.state.level
+			end
+		end
+		return nil, nil
+	end
+
 	local mapSplits = self.db.global.splits[self.state.mapId]
 	if not mapSplits then return nil, nil end
 

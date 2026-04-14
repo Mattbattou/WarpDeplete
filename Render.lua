@@ -552,8 +552,9 @@ self.frames.root.timerSplitText:SetText("")
 
 			if best then
 				local pbLabel = "PB"
-				-- If the record comes from a different level (fallback), indicate which one
-				if sourceLevel and sourceLevel ~= self.state.level then
+				if self.db.profile.splitMode == "manual" then
+					pbLabel = WarpDeplete.L["Manual"] or "Manual"
+				elseif sourceLevel and sourceLevel ~= self.state.level then
 					pbLabel = ("PB (+%d)"):format(sourceLevel)
 				end
 
